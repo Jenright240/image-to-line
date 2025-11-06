@@ -6,20 +6,20 @@
   <title>Photo → Coloring Page (OpenCV.js)</title>
   <style>
     :root{--accent:#4caf50;--muted:#777}
-    body{font-family:Inter, system-ui, -apple-system, Roboto, "Segoe UI", Arial; margin:0; background:#f4f6f8; color:#222}
+    body{font-family:Inter,system-ui,Roboto,Segoe UI,Arial;margin:0;background:#f4f6f8;color:#222}
     .app{max-width:1100px;margin:20px auto;display:flex;gap:16px;padding:16px}
     .left{flex:2;background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,.06)}
     .right{width:320px;background:#fff;border-left:1px solid #eee;border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.04)}
-    h1{margin:0 0 12px 0;font-size:20px}
+    h1{margin:0 0 12px;font-size:20px}
     .controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
     input[type=file]{padding:8px}
     button{background:var(--accent);color:#fff;border:0;padding:10px 12px;border-radius:8px;cursor:pointer}
     button[disabled]{opacity:.5;cursor:not-allowed}
-    #progressContainer{width:100%;background:#eee;border-radius:8px;height:12px;overflow:hidden;position:relative;display:none}
+    #progressContainer{width:100%;background:#eee;border-radius:8px;height:12px;overflow:hidden;position:relative;display:none;margin-top:6px}
     #progressBar{height:100%;width:0;background:var(--accent);transition:width .25s}
     #progressText{position:absolute;left:50%;top:-22px;transform:translateX(-50%);font-weight:600;color:#333}
     canvas{width:100%;border-radius:8px;border:1px solid #ddd;background:#fff}
-    .tools{display:flex;gap:8px;align-items:center;margin-top:12px}
+    .tools{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}
     label{font-size:14px;color:var(--muted)}
     .log{font-family:monospace;font-size:12px;white-space:pre-wrap;height:400px;overflow:auto;background:#fcfcfd;padding:8px;border-radius:8px;border:1px solid #eee}
     @media(max-width:900px){.app{flex-direction:column}.right{width:100%}}
@@ -39,7 +39,10 @@
         </div>
       </div>
 
-      <div id="progressContainer"><div id="progressText">0%</div><div id="progressBar"></div></div>
+      <div id="progressContainer">
+        <div id="progressText">0%</div>
+        <div id="progressBar"></div>
+      </div>
 
       <canvas id="canvas"></canvas>
 
@@ -50,13 +53,11 @@
         <button id="undo" disabled>Undo</button>
         <button id="clear" disabled>Clear</button>
       </div>
-
     </div>
 
     <div class="right">
       <div style="font-weight:700;margin-bottom:8px">Verbose Log</div>
-      <div id="log" class="log">Ready.
-</div>
+      <div id="log" class="log">Ready.\n</div>
     </div>
   </div>
 
@@ -66,7 +67,6 @@
   <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
   <script>
-    // Elements
     const upload = document.getElementById('upload');
     const convertBtn = document.getElementById('convert');
     const canvas = document.getElementById('canvas');
@@ -84,8 +84,8 @@
 
     let img = new Image();
     let history = [];
-    let drawing=false, currentColor='#000', currentBrush=6;
-    let conversionTimeoutId=null;
+    let drawing = false, currentColor = '#000', currentBrush = 6;
+    let conversionTimeoutId = null;
 
     function log(msg){
       const t = new Date().toLocaleTimeString();
@@ -94,118 +94,87 @@
     }
 
     function setProgress(p){
-      progressContainer.style.display = p>0 && p<100 ? 'block' : (p>=100 ? 'block' : 'none');
-      progressBar.style.width = p+'%';
-      progressText.textContent = Math.round(p)+'%';
+      progressContainer.style.display = (p>0 && p<100) ? 'block' : (p>=100 ? 'block' : 'none');
+      progressBar.style.width = p + '%';
+      progressText.textContent = Math.round(p) + '%';
     }
 
-    upload.addEventListener('change', e=>{
+    upload.addEventListener('change', e => {
       const file = e.target.files[0];
       if(!file) return;
       img.src = URL.createObjectURL(file);
-      img.onload = ()=>{
-        // set canvas size to image size but cap to 1280 for performance
+      img.onload = () => {
         const maxSide = 1280;
-        let w = img.width, h = img.height;
-        const scale = Math.min(1, maxSide / Math.max(w,h));
-        canvas.width = Math.round(w*scale);
-        canvas.height = Math.round(h*scale);
-        ctx.clearRect(0,0,canvas.width,canvas.height);
-        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        const scale = Math.min(1, maxSide / Math.max(img.width, img.height));
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         convertBtn.disabled = false;
-        downloadPNG.disabled = true; downloadPDF.disabled = true;
+        downloadPNG.disabled = true;
+        downloadPDF.disabled = true;
         clearBtn.disabled = false;
         log(`Loaded image: ${file.name} (${img.width}x${img.height}) scaled to ${canvas.width}x${canvas.height}`);
       };
     });
 
-    // conversion pipeline using OpenCV.js
     async function convertImageToOutline(){
-      if(typeof cv === 'undefined'){
-        alert('OpenCV.js not loaded yet.'); return;
-      }
-
+      if(typeof cv === 'undefined'){ alert('OpenCV.js not loaded yet.'); return; }
       setProgress(0); log('Starting conversion pipeline...');
-      // start timeout
       conversionTimeoutId = setTimeout(()=>{
         setProgress(0); log('Conversion timed out after 60s.');
         alert('Conversion timed out. Try a smaller image.');
       }, 60000);
 
       try{
-        // read canvas into Mat
         let src = cv.imread(canvas);
         setProgress(10);
-
-        // 1. convert to gray
         let gray = new cv.Mat();
-        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY);
         setProgress(20);
-
-        // 2. edge-preserving smoothing (bilateral)
         let smooth = new cv.Mat();
-        cv.bilateralFilter(gray, smooth, 9, 75, 75, cv.BORDER_DEFAULT);
+        cv.bilateralFilter(gray, smooth, 9, 75, 75);
         setProgress(35);
-
-        // 3. adaptive threshold to get base binary
         let adaptive = new cv.Mat();
         cv.adaptiveThreshold(smooth, adaptive, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
         setProgress(50);
-
-        // 4. combine with Canny edges to strengthen structural lines
         let edges = new cv.Mat();
-        // automatic Canny thresholds
         const v = cv.mean(gray)[0];
         const lower = Math.max(10, (1.0-0.33)*v);
         const upper = Math.min(255, (1.0+0.33)*v);
         cv.Canny(smooth, edges, lower, upper);
         setProgress(60);
-
-        // 5. Merge edges and adaptive threshold
         let merged = new cv.Mat();
         cv.bitwise_or(adaptive, edges, merged);
-
-        // 6. Morphological clean-up: close gaps then thin
         let kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3,3));
         cv.morphologyEx(merged, merged, cv.MORPH_CLOSE, kernel);
         setProgress(70);
-
-        // 7. Find contours and filter small ones
         let contours = new cv.MatVector();
         let hierarchy = new cv.Mat();
         cv.findContours(merged, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
         setProgress(80);
-
-        // create white background result
         let result = new cv.Mat.zeros(merged.rows, merged.cols, cv.CV_8UC3);
-        // draw simplified contours
-        for(let i=0;i<contours.size();i++){
+        for (let i = 0; i < contours.size(); i++) {
           let cnt = contours.get(i);
           let area = cv.contourArea(cnt);
-          if(area < 200) { cnt.delete(); continue; }
-          // approximate contour to reduce detail
+          if (area < 200) { cnt.delete(); continue; }
           let approx = new cv.Mat();
           let eps = 0.002 * cv.arcLength(cnt, true);
           cv.approxPolyDP(cnt, approx, eps, true);
-          // draw
+          // ✅ Fixed MatVector handling
           let tmpVec = new cv.MatVector();
           tmpVec.push_back(approx);
-          cv.drawContours(result, tmpVec, -1, new cv.Scalar(0, 0, 0), 1, cv.LINE_AA);
+          cv.drawContours(result, tmpVec, -1, new cv.Scalar(0,0,0), 1, cv.LINE_AA);
           tmpVec.delete();
-          approx.delete(); cnt.delete();
+          approx.delete();
+          cnt.delete();
         }
-
         setProgress(92);
-        // show on canvas
         cv.imshow(canvas, result);
         setProgress(100);
         log('Conversion finished — produced outline image.');
-
-        // cleanup
         src.delete(); gray.delete(); smooth.delete(); adaptive.delete(); edges.delete(); merged.delete(); contours.delete(); hierarchy.delete(); result.delete();
         clearTimeout(conversionTimeoutId);
-
-        // enable coloring tools
         downloadPNG.disabled = false; downloadPDF.disabled = false; undoBtn.disabled = false; clearBtn.disabled = false;
       } catch(err){
         clearTimeout(conversionTimeoutId);
@@ -218,49 +187,34 @@
     convertBtn.addEventListener('click', ()=>{
       convertBtn.disabled = true;
       setProgress(5);
-      // allow UI update before heavy work
       setTimeout(()=>{ convertImageToOutline().finally(()=>convertBtn.disabled=false); }, 100);
     });
 
-    // Drawing & history for undo
     function saveHistory(){
-      try{ history.push(ctx.getImageData(0,0,canvas.width,canvas.height)); if(history.length>20) history.shift(); undoBtn.disabled=false; }catch(e){}
+      try{
+        history.push(ctx.getImageData(0,0,canvas.width,canvas.height));
+        if(history.length>20) history.shift();
+        undoBtn.disabled=false;
+      }catch(e){}
     }
-    canvas.addEventListener('mousedown', e=>{
-      drawing=true; ctx.beginPath(); ctx.moveTo(getX(e), getY(e)); saveHistory();
-    });
-    canvas.addEventListener('mousemove', e=>{ if(!drawing) return; ctx.lineWidth=currentBrush; ctx.strokeStyle=currentColor; ctx.lineCap='round'; ctx.lineTo(getX(e), getY(e)); ctx.stroke(); });
-    canvas.addEventListener('mouseup', ()=>{ drawing=false; ctx.closePath(); });
-    canvas.addEventListener('mouseleave', ()=>{ drawing=false; ctx.closePath(); });
-    // touch
-    canvas.addEventListener('touchstart', e=>{ e.preventDefault(); drawing=true; const t=e.touches[0]; ctx.beginPath(); ctx.moveTo(t.clientX-canvas.getBoundingClientRect().left, t.clientY-canvas.getBoundingClientRect().top); saveHistory(); });
-    canvas.addEventListener('touchmove', e=>{ e.preventDefault(); if(!drawing) return; const t=e.touches[0]; ctx.lineWidth=currentBrush; ctx.strokeStyle=currentColor; ctx.lineCap='round'; ctx.lineTo(t.clientX-canvas.getBoundingClientRect().left, t.clientY-canvas.getBoundingClientRect().top); ctx.stroke(); });
-    canvas.addEventListener('touchend', ()=>{ drawing=false; ctx.closePath(); });
 
-    function getX(e){ return e.touches ? e.touches[0].clientX - canvas.getBoundingClientRect().left : e.offsetX; }
-    function getY(e){ return e.touches ? e.touches[0].clientY - canvas.getBoundingClientRect().top : e.offsetY; }
+    canvas.addEventListener('mousedown', e=>{drawing=true;ctx.beginPath();ctx.moveTo(e.offsetX,e.offsetY);saveHistory();});
+    canvas.addEventListener('mousemove', e=>{if(!drawing)return;ctx.lineWidth=currentBrush;ctx.strokeStyle=currentColor;ctx.lineCap='round';ctx.lineTo(e.offsetX,e.offsetY);ctx.stroke();});
+    canvas.addEventListener('mouseup', ()=>{drawing=false;ctx.closePath();});
+    canvas.addEventListener('mouseleave', ()=>{drawing=false;ctx.closePath();});
+    canvas.addEventListener('touchstart', e=>{e.preventDefault();drawing=true;const t=e.touches[0];ctx.beginPath();ctx.moveTo(t.clientX-canvas.getBoundingClientRect().left,t.clientY-canvas.getBoundingClientRect().top);saveHistory();});
+    canvas.addEventListener('touchmove', e=>{e.preventDefault();if(!drawing)return;const t=e.touches[0];ctx.lineWidth=currentBrush;ctx.strokeStyle=currentColor;ctx.lineCap='round';ctx.lineTo(t.clientX-canvas.getBoundingClientRect().left,t.clientY-canvas.getBoundingClientRect().top);ctx.stroke();});
+    canvas.addEventListener('touchend', ()=>{drawing=false;ctx.closePath();});
 
-    colorPicker.addEventListener('input', e=> currentColor = e.target.value);
-    brushSize.addEventListener('input', e=> currentBrush = e.target.value);
+    colorPicker.addEventListener('input', e=>currentColor=e.target.value);
+    brushSize.addEventListener('input', e=>currentBrush=e.target.value);
+    undoBtn.addEventListener('click', ()=>{if(history.length===0)return;const imgData=history.pop();ctx.putImageData(imgData,0,0);if(history.length===0)undoBtn.disabled=true;log('Undo applied');});
+    clearBtn.addEventListener('click', ()=>{ctx.clearRect(0,0,canvas.width,canvas.height);history=[];undoBtn.disabled=true;log('Canvas cleared');});
+    downloadPNG.addEventListener('click', ()=>{const link=document.createElement('a');link.download='coloring_page.png';link.href=canvas.toDataURL('image/png');link.click();log('PNG downloaded');});
+    downloadPDF.addEventListener('click', ()=>{const { jsPDF }=window.jspdf;const pdf=new jsPDF({unit:'px',format:[canvas.width,canvas.height]});const imgData=canvas.toDataURL('image/png');pdf.addImage(imgData,'PNG',0,0,canvas.width,canvas.height);pdf.save('coloring_page.pdf');log('PDF saved');});
 
-    undoBtn.addEventListener('click', ()=>{
-      if(history.length===0) return; const imgData = history.pop(); ctx.putImageData(imgData,0,0); if(history.length===0) undoBtn.disabled=true; log('Undo applied');
-    });
-    clearBtn.addEventListener('click', ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); history=[]; undoBtn.disabled=true; log('Canvas cleared'); });
-
-    // Download PNG
-    downloadPNG.addEventListener('click', ()=>{
-      const link = document.createElement('a'); link.download='coloring_page.png'; link.href=canvas.toDataURL('image/png'); link.click(); log('PNG downloaded');
-    });
-
-    // Download PDF via jsPDF
-    downloadPDF.addEventListener('click', ()=>{
-      const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:'px',format:[canvas.width,canvas.height]}); const imgData = canvas.toDataURL('image/png'); pdf.addImage(imgData,'PNG',0,0,canvas.width,canvas.height); pdf.save('coloring_page.pdf'); log('PDF saved');
-    });
-
-    // Wait for OpenCV.js to be ready
-    function onOpenCvReady(){ log('OpenCV.js loaded'); }
-    if(cv && cv['onRuntimeInitialized']){ cv['onRuntimeInitialized']=onOpenCvReady; } else { console.warn('OpenCV runtime not found'); }
+    function onOpenCvReady(){log('OpenCV.js loaded');}
+    if(cv && cv['onRuntimeInitialized']) cv['onRuntimeInitialized']=onOpenCvReady;
   </script>
 </body>
 </html>
