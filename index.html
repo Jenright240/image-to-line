@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Image To Line Converter</title>
+<style>
+  body {
+    font-family: "Segoe UI", sans-serif;
+    background: #f4f4f4;
+    margin: 0;
+  }
+  .container {
+    display: flex;
+    flex-wrap: wrap;
+    max-width: 1000px;
+    margin: 20px auto;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+  }
+  .left-panel {
+    flex: 2;
+    padding: 20px;
+    min-width: 300px;
+  }
+  .right-panel {
+    flex: 1;
+    min-width: 260px;
+    border-left: 1px solid #ddd;
+    background: #fafafa;
+    padding: 10px;
+    overflow-y: auto;
+    max-height: 85vh;
+  }
+  .log-title {
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  #log {
+    font-family: Consolas, monospace;
+    font-size: 13px;
+    color: #333;
+    white-space: pre-wrap;
+    text-align: left;
+  }
+  canvas {
+    width: 100%;
+    border: 2px solid #ccc;
+    border-radius: 8px;
+    margin-top: 10px;
+    touch-action: none;
+  }
+  button,
+  input[type="file"],
+  input[type="color"],
+  input[type="range"] {
+    margin: 6px;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+  }
+  button {
+    background: #4caf50;
+    color: white;
+    cursor: pointer;
+  }
+  button:hover {
+    background: #43a047;
+  }
+  button:disabled {
+    background: #999;
+    cursor: not-allowed;
+  }
+  #progressContainer {
+    width: 100%;
+    background: #ddd;
+    border-radius: 8px;
+    margin: 10px 0;
+    height: 12px;
+    display: none;
+    position: relative;
+  }
+  #progressBar {
+    width: 0;
+    height: 100%;
+    background: #4caf50;
+    border-radius: 8px;
+    transition: width 0.3s;
+  }
+  #progressText {
+    position: absolute;
+    top: -25px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 14px;
+    font-weight: 600;
+    color: #333;
+  }
+  @media (max-width: 768px) {
+    .container {
+      flex-direction: column;
+    }
+    .right-panel {
+      max-height: 300px;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="left-panel">
+    <h1>Image To Line Convertor</h1>
+    <input type="file" id="upload" accept="image/*" />
+    <button id="convert" disabled title="Loading AI model...">Convert</button>
+
+    <div id="progressContainer">
+      <div id="progressText">0%</div>
+      <div id="progressBar"></div>
+    </div>
+
+    <canvas id="canvas"></canvas>
+
+    <div id="controls" style="display:none;">
+      <div>
+        <label>Color:</label>
+        <input type="color" id="colorPicker" value="#000000" />
+      </div>
+      <div>
+        <label>Brush:</label>
+        <input type="range" id="brushSize" min="1" max="30" value="5" />
+      </div>
+      <button id="undo">Undo</button>
+      <button id="clear">Clear</button>
+      <button id="save">Save PDF</button>
+    </div>
+  </div>
+
+  <div class="right-panel">
+    <div class="log-title">Verbose Log</div>
+    <div id="log"></div>
+  </div>
+</div>
+
+<!-- Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
+<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+<script>
+const upload = document.getElementById("upload"),
+  convertBtn = document.getElementById("convert"),
+  canvas = document.getElementById("canvas"),
+  ctx = canvas.getContext("2d"),
+  progressContainer = document.getElementById("progressContainer"),
+  progressBar = document.getElementById("progressBar"),
+  progressText = document.getElementById("progressText"),
+  controls = document.getElementById("controls"),
+  colorPicker = document.getElementById("colorPicker"),
+  brushSize = document.getElementById("brushSize"),
+  saveBtn = document.getElementById("save"),
+  undoBtn = document.getElementById("undo"),
+  clearBtn = document.getElementById("clear"),
+  logBox = document.getElementById("log");
+
+let img = new Image(),
+  drawing = false,
+  currentColor = "#000",
+  currentBrush = 5,
+  aiModel,
+  historyStack = [],
+  imageLoaded = false,
+  modelLoaded = false;
+
+function log(msg) {
+  const timestamp = new Date().toLocaleTimeString();
+  logBox.textContent += `[${timestamp}] ${msg}\n`;
+  logBox.scrollTop = logBox.scrollHeight;
+}
+
+function setProgress(pct) {
+  progressBar.style.width = pct + "%";
+  progressText.innerText = Math.round(pct) + "%";
+  log(`Progress: ${Math.round(pct)}%`);
+}
+
+// Load AI model safely
+async function loadAIModel() {
+  try {
+    log("Loading TensorFlow.js HED edge refinement model...");
+    aiModel = await tf.loadGraphModel("./models/model.json");
+    log("AI model loaded successfully.");
+    modelLoaded = true;
+    if (imageLoaded) convertBtn.disabled = false;
+  } catch (err) {
+    log("Error loading AI model: " + err.message);
+    alert("AI model failed to load. Conversion will use OpenCV only.");
+    modelLoaded = false;
+  }
+}
+loadAIModel();
+
+// Handle image upload
+upload.addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  img.src = URL.createObjectURL(file);
+  img.onload = () => {
+    canvas.width = img.width;
+    canvas.height = img.height;
+    ctx.drawImage(img, 0, 0);
+    imageLoaded = true;
+    if (modelLoaded) convertBtn.disabled = false;
+    log("Image loaded: " + file.name + ` (${img.width}x${img.height})`);
+  };
+});
+
+convertBtn.addEventListener("click", async () => {
+  if (typeof cv === "undefined") {
+    alert("OpenCV not ready yet.");
+    return;
+  }
+  log("Starting conversion...");
+  progressContainer.style.display = "block";
+  setProgress(0);
+
+  const timeoutId = setTimeout(() => {
+    log("Conversion timed out (1 minute). Aborting.");
+    alert("Conversion timed out. Try smaller image or refresh.");
+    progressContainer.style.display = "none";
+  }, 60000);
+
+  try {
+    let start = performance.now();
+    log("Reading image data...");
+    let src = cv.imread(canvas),
+      gray = new cv.Mat();
+    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+    setProgress(10);
+
+    // --- AI Edge Refinement ---
+    let refinedMat;
+    if (aiModel) {
+      log("Running AI edge detection...");
+      const tfImage = tf.browser
+        .fromPixels(canvas)
+        .resizeNearestNeighbor([256, 256])
+        .toFloat()
+        .div(255)
+        .expandDims(0);
+
+      let prediction = await aiModel.predict(tfImage);
+      prediction = prediction.squeeze().mul(255).clipByValue(0, 255);
+
+      const rgba = await tf.browser.toPixels(prediction);
+      const grayArr = new Uint8Array(rgba.length / 4);
+      for (let i = 0, j = 0; i < rgba.length; i += 4, j++) grayArr[j] = rgba[i];
+
+      refinedMat = cv.matFromArray(256, 256, cv.CV_8UC1, grayArr);
+      cv.resize(refinedMat, refinedMat, new cv.Size(canvas.width, canvas.height));
+    } else {
+      log("AI model unavailable — skipping refinement.");
+      refinedMat = gray.clone();
+    }
+    setProgress(40);
+
+    // --- OpenCV Filters & Contour Simplification ---
+    log("Applying OpenCV filters...");
+    let smooth = new cv.Mat(),
+      adaptive = new cv.Mat();
+    cv.bilateralFilter(gray, smooth, 9, 100, 100);
+    cv.adaptiveThreshold(
+      smooth,
+      adaptive,
+      255,
+      cv.ADAPTIVE_THRESH_GAUSSIAN_C,
+      cv.THRESH_BINARY,
+      11,
+      2
+    );
+    cv.bitwise_and(refinedMat, adaptive, adaptive);
+    cv.bitwise_not(adaptive, adaptive);
+    setProgress(70);
+
+    log("Finding and simplifying contours...");
+    let contours = new cv.MatVector(),
+      hierarchy = new cv.Mat();
+    cv.findContours(
+      adaptive,
+      contours,
+      hierarchy,
+      cv.RETR_EXTERNAL,
+      cv.CHAIN_APPROX_SIMPLE
+    );
+    let result = cv.Mat.zeros(adaptive.rows, adaptive.cols, cv.CV_8UC3);
+    for (let i = 0; i < contours.size(); ++i) {
+      let cnt = contours.get(i);
+      if (cv.contourArea(cnt) > 400) {
+        let approx = new cv.Mat();
+        cv.approxPolyDP(cnt, approx, 2, true);
+        cv.drawContours(
+          result,
+          new cv.MatVector(approx),
+          -1,
+          new cv.Scalar(0, 0, 0),
+          1,
+          cv.LINE_AA
+        );
+        approx.delete();
+      }
+    }
+    setProgress(90);
+
+    cv.imshow("canvas", result);
+    src.delete();
+    gray.delete();
+    refinedMat.delete();
+    smooth.delete();
+    adaptive.delete();
+    contours.delete();
+    hierarchy.delete();
+    result.delete();
+    setProgress(100);
+
+    clearTimeout(timeoutId);
+    controls.style.display = "block";
+    historyStack = [];
+    log(
+      "Conversion complete in " +
+        ((performance.now() - start) / 1000).toFixed(2) +
+        "s."
+    );
+  } catch (err) {
+    clearTimeout(timeoutId);
+    log("Error during conversion: " + err.message);
+    alert("Error: " + err.message);
+  }
+});
+
+// Drawing & tools
+canvas.addEventListener("mousedown", startDraw);
+canvas.addEventListener("mousemove", draw);
+canvas.addEventListener("mouseup", endDraw);
+canvas.addEventListener("touchstart", startDraw);
+canvas.addEventListener("touchmove", draw);
+canvas.addEventListener("touchend", endDraw);
+
+function startDraw(e) {
+  e.preventDefault();
+  drawing = true;
+  ctx.beginPath();
+  ctx.moveTo(getX(e), getY(e));
+  historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
+}
+function draw(e) {
+  if (!drawing) return;
+  e.preventDefault();
+  ctx.lineWidth = currentBrush;
+  ctx.strokeStyle = currentColor;
+  ctx.lineCap = "round";
+  ctx.lineTo(getX(e), getY(e));
+  ctx.stroke();
+}
+function endDraw() {
+  drawing = false;
+  ctx.closePath();
+}
+function getX(e) {
+  return e.touches
+    ? e.touches[0].clientX - canvas.getBoundingClientRect().left
+    : e.offsetX;
+}
+function getY(e) {
+  return e.touches
+    ? e.touches[0].clientY - canvas.getBoundingClientRect().top
+    : e.offsetY;
+}
+colorPicker.addEventListener("input", (e) => (currentColor = e.target.value));
+brushSize.addEventListener("input", (e) => (currentBrush = e.target.value));
+undoBtn.addEventListener("click", () => {
+  if (historyStack.length > 0) {
+    ctx.putImageData(historyStack.pop(), 0, 0);
+    log("Undo last stroke.");
+  }
+});
+clearBtn.addEventListener("click", () => {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  historyStack = [];
+  log("Canvas cleared.");
+});
+saveBtn.addEventListener("click", () => {
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({
+    orientation: "portrait",
+    unit: "px",
+    format: [canvas.width, canvas.height],
+  });
+  const imgData = canvas.toDataURL("image/png");
+  pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
+  pdf.save("coloring_page.pdf");
+  log("Saved canvas as PDF.");
+});
+</script>
+</body>
+</html>
