@@ -1,407 +1,263 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Image To Line Converter</title>
-<style>
-  body {
-    font-family: "Segoe UI", sans-serif;
-    background: #f4f4f4;
-    margin: 0;
-  }
-  .container {
-    display: flex;
-    flex-wrap: wrap;
-    max-width: 1000px;
-    margin: 20px auto;
-    background: #fff;
-    border-radius: 12px;
-    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
-    overflow: hidden;
-  }
-  .left-panel {
-    flex: 2;
-    padding: 20px;
-    min-width: 300px;
-  }
-  .right-panel {
-    flex: 1;
-    min-width: 260px;
-    border-left: 1px solid #ddd;
-    background: #fafafa;
-    padding: 10px;
-    overflow-y: auto;
-    max-height: 85vh;
-  }
-  .log-title {
-    font-weight: 600;
-    margin-bottom: 5px;
-  }
-  #log {
-    font-family: Consolas, monospace;
-    font-size: 13px;
-    color: #333;
-    white-space: pre-wrap;
-    text-align: left;
-  }
-  canvas {
-    width: 100%;
-    border: 2px solid #ccc;
-    border-radius: 8px;
-    margin-top: 10px;
-    touch-action: none;
-  }
-  button,
-  input[type="file"],
-  input[type="color"],
-  input[type="range"] {
-    margin: 6px;
-    padding: 10px;
-    border: none;
-    border-radius: 8px;
-    font-size: 16px;
-  }
-  button {
-    background: #4caf50;
-    color: white;
-    cursor: pointer;
-  }
-  button:hover {
-    background: #43a047;
-  }
-  button:disabled {
-    background: #999;
-    cursor: not-allowed;
-  }
-  #progressContainer {
-    width: 100%;
-    background: #ddd;
-    border-radius: 8px;
-    margin: 10px 0;
-    height: 12px;
-    display: none;
-    position: relative;
-  }
-  #progressBar {
-    width: 0;
-    height: 100%;
-    background: #4caf50;
-    border-radius: 8px;
-    transition: width 0.3s;
-  }
-  #progressText {
-    position: absolute;
-    top: -25px;
-    left: 50%;
-    transform: translateX(-50%);
-    font-size: 14px;
-    font-weight: 600;
-    color: #333;
-  }
-  @media (max-width: 768px) {
-    .container {
-      flex-direction: column;
-    }
-    .right-panel {
-      max-height: 300px;
-    }
-  }
-</style>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Photo → Coloring Page (OpenCV.js)</title>
+  <style>
+    :root{--accent:#4caf50;--muted:#777}
+    body{font-family:Inter, system-ui, -apple-system, Roboto, "Segoe UI", Arial; margin:0; background:#f4f6f8; color:#222}
+    .app{max-width:1100px;margin:20px auto;display:flex;gap:16px;padding:16px}
+    .left{flex:2;background:#fff;border-radius:12px;padding:16px;box-shadow:0 6px 20px rgba(0,0,0,.06)}
+    .right{width:320px;background:#fff;border-left:1px solid #eee;border-radius:12px;padding:12px;box-shadow:0 6px 20px rgba(0,0,0,.04)}
+    h1{margin:0 0 12px 0;font-size:20px}
+    .controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+    input[type=file]{padding:8px}
+    button{background:var(--accent);color:#fff;border:0;padding:10px 12px;border-radius:8px;cursor:pointer}
+    button[disabled]{opacity:.5;cursor:not-allowed}
+    #progressContainer{width:100%;background:#eee;border-radius:8px;height:12px;overflow:hidden;position:relative;display:none}
+    #progressBar{height:100%;width:0;background:var(--accent);transition:width .25s}
+    #progressText{position:absolute;left:50%;top:-22px;transform:translateX(-50%);font-weight:600;color:#333}
+    canvas{width:100%;border-radius:8px;border:1px solid #ddd;background:#fff}
+    .tools{display:flex;gap:8px;align-items:center;margin-top:12px}
+    label{font-size:14px;color:var(--muted)}
+    .log{font-family:monospace;font-size:12px;white-space:pre-wrap;height:400px;overflow:auto;background:#fcfcfd;padding:8px;border-radius:8px;border:1px solid #eee}
+    @media(max-width:900px){.app{flex-direction:column}.right{width:100%}}
+  </style>
 </head>
 <body>
-<div class="container">
-  <div class="left-panel">
-    <h1>Image To Line Convertor</h1>
-    <input type="file" id="upload" accept="image/*" />
-    <button id="convert" disabled title="Loading AI model...">Convert</button>
+  <div class="app">
+    <div class="left">
+      <h1>Photo → Coloring Page (OpenCV.js)</h1>
 
-    <div id="progressContainer">
-      <div id="progressText">0%</div>
-      <div id="progressBar"></div>
+      <div class="controls">
+        <input id="upload" type="file" accept="image/*" />
+        <button id="convert" disabled>Convert</button>
+        <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+          <button id="downloadPNG" disabled>Download PNG</button>
+          <button id="downloadPDF" disabled>Save PDF</button>
+        </div>
+      </div>
+
+      <div id="progressContainer"><div id="progressText">0%</div><div id="progressBar"></div></div>
+
+      <canvas id="canvas"></canvas>
+
+      <div class="tools">
+        <label>Brush</label>
+        <input id="colorPicker" type="color" value="#000000" />
+        <input id="brushSize" type="range" min="1" max="50" value="6" />
+        <button id="undo" disabled>Undo</button>
+        <button id="clear" disabled>Clear</button>
+      </div>
+
     </div>
 
-    <canvas id="canvas"></canvas>
-
-    <div id="controls" style="display:none;">
-      <div>
-        <label>Color:</label>
-        <input type="color" id="colorPicker" value="#000000" />
-      </div>
-      <div>
-        <label>Brush:</label>
-        <input type="range" id="brushSize" min="1" max="30" value="5" />
-      </div>
-      <button id="undo">Undo</button>
-      <button id="clear">Clear</button>
-      <button id="save">Save PDF</button>
-    </div>
-  </div>
-
-  <div class="right-panel">
-    <div class="log-title">Verbose Log</div>
-    <div id="log"></div>
-  </div>
+    <div class="right">
+      <div style="font-weight:700;margin-bottom:8px">Verbose Log</div>
+      <div id="log" class="log">Ready.
 </div>
+    </div>
+  </div>
 
-<!-- Libraries -->
-<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.11.0/dist/tf.min.js"></script>
-<script async src="https://docs.opencv.org/4.x/opencv.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+  <!-- OpenCV.js -->
+  <script src="https://docs.opencv.org/4.x/opencv.js"></script>
+  <!-- jsPDF for PDF export -->
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 
-<script>
-const upload = document.getElementById("upload"),
-  convertBtn = document.getElementById("convert"),
-  canvas = document.getElementById("canvas"),
-  ctx = canvas.getContext("2d"),
-  progressContainer = document.getElementById("progressContainer"),
-  progressBar = document.getElementById("progressBar"),
-  progressText = document.getElementById("progressText"),
-  controls = document.getElementById("controls"),
-  colorPicker = document.getElementById("colorPicker"),
-  brushSize = document.getElementById("brushSize"),
-  saveBtn = document.getElementById("save"),
-  undoBtn = document.getElementById("undo"),
-  clearBtn = document.getElementById("clear"),
-  logBox = document.getElementById("log");
+  <script>
+    // Elements
+    const upload = document.getElementById('upload');
+    const convertBtn = document.getElementById('convert');
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const progressContainer = document.getElementById('progressContainer');
+    const progressBar = document.getElementById('progressBar');
+    const progressText = document.getElementById('progressText');
+    const logEl = document.getElementById('log');
+    const colorPicker = document.getElementById('colorPicker');
+    const brushSize = document.getElementById('brushSize');
+    const undoBtn = document.getElementById('undo');
+    const clearBtn = document.getElementById('clear');
+    const downloadPNG = document.getElementById('downloadPNG');
+    const downloadPDF = document.getElementById('downloadPDF');
 
-let img = new Image(),
-  drawing = false,
-  currentColor = "#000",
-  currentBrush = 5,
-  aiModel,
-  historyStack = [],
-  imageLoaded = false,
-  modelLoaded = false;
+    let img = new Image();
+    let history = [];
+    let drawing=false, currentColor='#000', currentBrush=6;
+    let conversionTimeoutId=null;
 
-function log(msg) {
-  const timestamp = new Date().toLocaleTimeString();
-  logBox.textContent += `[${timestamp}] ${msg}\n`;
-  logBox.scrollTop = logBox.scrollHeight;
-}
-
-function setProgress(pct) {
-  progressBar.style.width = pct + "%";
-  progressText.innerText = Math.round(pct) + "%";
-  log(`Progress: ${Math.round(pct)}%`);
-}
-
-// Load AI model safely
-async function loadAIModel() {
-  try {
-    log("Loading TensorFlow.js HED edge refinement model...");
-    aiModel = await tf.loadGraphModel('./models/model.json');
-    log("AI model loaded successfully.");
-    modelLoaded = true;
-    if (imageLoaded) convertBtn.disabled = false;
-  } catch (err) {
-    log("Error loading AI model: " + err.message);
-    alert("AI model failed to load. Conversion will use OpenCV only.");
-    modelLoaded = false;
-  }
-}
-loadAIModel();
-
-// Handle image upload
-upload.addEventListener("change", (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  img.src = URL.createObjectURL(file);
-  img.onload = () => {
-    canvas.width = img.width;
-    canvas.height = img.height;
-    ctx.drawImage(img, 0, 0);
-    imageLoaded = true;
-    if (modelLoaded) convertBtn.disabled = false;
-    log("Image loaded: " + file.name + ` (${img.width}x${img.height})`);
-  };
-});
-
-convertBtn.addEventListener("click", async () => {
-  if (typeof cv === "undefined") {
-    alert("OpenCV not ready yet.");
-    return;
-  }
-  log("Starting conversion...");
-  progressContainer.style.display = "block";
-  setProgress(0);
-
-  const timeoutId = setTimeout(() => {
-    log("Conversion timed out (1 minute). Aborting.");
-    alert("Conversion timed out. Try smaller image or refresh.");
-    progressContainer.style.display = "none";
-  }, 60000);
-
-  try {
-    let start = performance.now();
-    log("Reading image data...");
-    let src = cv.imread(canvas),
-      gray = new cv.Mat();
-    cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
-    setProgress(10);
-
-    // --- AI Edge Refinement ---
-    let refinedMat;
-    if (aiModel) {
-      log("Running AI edge detection...");
-      const tfImage = tf.browser
-        .fromPixels(canvas)
-        .resizeNearestNeighbor([256, 256])
-        .toFloat()
-        .div(255)
-        .expandDims(0);
-
-      let prediction = await aiModel.predict(tfImage);
-      prediction = prediction.squeeze().mul(255).clipByValue(0, 255);
-
-      const rgba = await tf.browser.toPixels(prediction);
-      const grayArr = new Uint8Array(rgba.length / 4);
-      for (let i = 0, j = 0; i < rgba.length; i += 4, j++) grayArr[j] = rgba[i];
-
-      refinedMat = cv.matFromArray(256, 256, cv.CV_8UC1, grayArr);
-      cv.resize(refinedMat, refinedMat, new cv.Size(canvas.width, canvas.height));
-    } else {
-      log("AI model unavailable — skipping refinement.");
-      refinedMat = gray.clone();
+    function log(msg){
+      const t = new Date().toLocaleTimeString();
+      logEl.textContent += `[${t}] ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
     }
-    setProgress(40);
 
-    // --- OpenCV Filters & Contour Simplification ---
-    log("Applying OpenCV filters...");
-    let smooth = new cv.Mat(),
-      adaptive = new cv.Mat();
-    cv.bilateralFilter(gray, smooth, 9, 100, 100);
-    cv.adaptiveThreshold(
-      smooth,
-      adaptive,
-      255,
-      cv.ADAPTIVE_THRESH_GAUSSIAN_C,
-      cv.THRESH_BINARY,
-      11,
-      2
-    );
-    cv.bitwise_and(refinedMat, adaptive, adaptive);
-    cv.bitwise_not(adaptive, adaptive);
-    setProgress(70);
+    function setProgress(p){
+      progressContainer.style.display = p>0 && p<100 ? 'block' : (p>=100 ? 'block' : 'none');
+      progressBar.style.width = p+'%';
+      progressText.textContent = Math.round(p)+'%';
+    }
 
-    log("Finding and simplifying contours...");
-    let contours = new cv.MatVector(),
-      hierarchy = new cv.Mat();
-    cv.findContours(
-      adaptive,
-      contours,
-      hierarchy,
-      cv.RETR_EXTERNAL,
-      cv.CHAIN_APPROX_SIMPLE
-    );
-    let result = cv.Mat.zeros(adaptive.rows, adaptive.cols, cv.CV_8UC3);
-    for (let i = 0; i < contours.size(); ++i) {
-      let cnt = contours.get(i);
-      if (cv.contourArea(cnt) > 400) {
-        let approx = new cv.Mat();
-        cv.approxPolyDP(cnt, approx, 2, true);
-        cv.drawContours(
-          result,
-          new cv.MatVector(approx),
-          -1,
-          new cv.Scalar(0, 0, 0),
-          1,
-          cv.LINE_AA
-        );
-        approx.delete();
+    upload.addEventListener('change', e=>{
+      const file = e.target.files[0];
+      if(!file) return;
+      img.src = URL.createObjectURL(file);
+      img.onload = ()=>{
+        // set canvas size to image size but cap to 1280 for performance
+        const maxSide = 1280;
+        let w = img.width, h = img.height;
+        const scale = Math.min(1, maxSide / Math.max(w,h));
+        canvas.width = Math.round(w*scale);
+        canvas.height = Math.round(h*scale);
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.drawImage(img,0,0,canvas.width,canvas.height);
+        convertBtn.disabled = false;
+        downloadPNG.disabled = true; downloadPDF.disabled = true;
+        clearBtn.disabled = false;
+        log(`Loaded image: ${file.name} (${img.width}x${img.height}) scaled to ${canvas.width}x${canvas.height}`);
+      };
+    });
+
+    // conversion pipeline using OpenCV.js
+    async function convertImageToOutline(){
+      if(typeof cv === 'undefined'){
+        alert('OpenCV.js not loaded yet.'); return;
+      }
+
+      setProgress(0); log('Starting conversion pipeline...');
+      // start timeout
+      conversionTimeoutId = setTimeout(()=>{
+        setProgress(0); log('Conversion timed out after 60s.');
+        alert('Conversion timed out. Try a smaller image.');
+      }, 60000);
+
+      try{
+        // read canvas into Mat
+        let src = cv.imread(canvas);
+        setProgress(10);
+
+        // 1. convert to gray
+        let gray = new cv.Mat();
+        cv.cvtColor(src, gray, cv.COLOR_RGBA2GRAY, 0);
+        setProgress(20);
+
+        // 2. edge-preserving smoothing (bilateral)
+        let smooth = new cv.Mat();
+        cv.bilateralFilter(gray, smooth, 9, 75, 75, cv.BORDER_DEFAULT);
+        setProgress(35);
+
+        // 3. adaptive threshold to get base binary
+        let adaptive = new cv.Mat();
+        cv.adaptiveThreshold(smooth, adaptive, 255, cv.ADAPTIVE_THRESH_GAUSSIAN_C, cv.THRESH_BINARY, 11, 2);
+        setProgress(50);
+
+        // 4. combine with Canny edges to strengthen structural lines
+        let edges = new cv.Mat();
+        // automatic Canny thresholds
+        const v = cv.mean(gray)[0];
+        const lower = Math.max(10, (1.0-0.33)*v);
+        const upper = Math.min(255, (1.0+0.33)*v);
+        cv.Canny(smooth, edges, lower, upper);
+        setProgress(60);
+
+        // 5. Merge edges and adaptive threshold
+        let merged = new cv.Mat();
+        cv.bitwise_or(adaptive, edges, merged);
+
+        // 6. Morphological clean-up: close gaps then thin
+        let kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3,3));
+        cv.morphologyEx(merged, merged, cv.MORPH_CLOSE, kernel);
+        setProgress(70);
+
+        // 7. Find contours and filter small ones
+        let contours = new cv.MatVector();
+        let hierarchy = new cv.Mat();
+        cv.findContours(merged, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
+        setProgress(80);
+
+        // create white background result
+        let result = new cv.Mat.zeros(merged.rows, merged.cols, cv.CV_8UC3);
+        // draw simplified contours
+        for(let i=0;i<contours.size();i++){
+          let cnt = contours.get(i);
+          let area = cv.contourArea(cnt);
+          if(area < 200) { cnt.delete(); continue; }
+          // approximate contour to reduce detail
+          let approx = new cv.Mat();
+          let eps = 0.002 * cv.arcLength(cnt, true);
+          cv.approxPolyDP(cnt, approx, eps, true);
+          // draw
+          cv.drawContours(result, new cv.MatVector(approx), -1, new cv.Scalar(0,0,0), 1, cv.LINE_AA);
+          approx.delete(); cnt.delete();
+        }
+
+        setProgress(92);
+        // show on canvas
+        cv.imshow(canvas, result);
+        setProgress(100);
+        log('Conversion finished — produced outline image.');
+
+        // cleanup
+        src.delete(); gray.delete(); smooth.delete(); adaptive.delete(); edges.delete(); merged.delete(); contours.delete(); hierarchy.delete(); result.delete();
+        clearTimeout(conversionTimeoutId);
+
+        // enable coloring tools
+        downloadPNG.disabled = false; downloadPDF.disabled = false; undoBtn.disabled = false; clearBtn.disabled = false;
+      } catch(err){
+        clearTimeout(conversionTimeoutId);
+        setProgress(0);
+        log('Error during conversion: '+err.message);
+        alert('Conversion error: '+err.message);
       }
     }
-    setProgress(90);
 
-    cv.imshow("canvas", result);
-    src.delete();
-    gray.delete();
-    refinedMat.delete();
-    smooth.delete();
-    adaptive.delete();
-    contours.delete();
-    hierarchy.delete();
-    result.delete();
-    setProgress(100);
+    convertBtn.addEventListener('click', ()=>{
+      convertBtn.disabled = true;
+      setProgress(5);
+      // allow UI update before heavy work
+      setTimeout(()=>{ convertImageToOutline().finally(()=>convertBtn.disabled=false); }, 100);
+    });
 
-    clearTimeout(timeoutId);
-    controls.style.display = "block";
-    historyStack = [];
-    log(
-      "Conversion complete in " +
-        ((performance.now() - start) / 1000).toFixed(2) +
-        "s."
-    );
-  } catch (err) {
-    clearTimeout(timeoutId);
-    log("Error during conversion: " + err.message);
-    alert("Error: " + err.message);
-  }
-});
+    // Drawing & history for undo
+    function saveHistory(){
+      try{ history.push(ctx.getImageData(0,0,canvas.width,canvas.height)); if(history.length>20) history.shift(); undoBtn.disabled=false; }catch(e){}
+    }
+    canvas.addEventListener('mousedown', e=>{
+      drawing=true; ctx.beginPath(); ctx.moveTo(getX(e), getY(e)); saveHistory();
+    });
+    canvas.addEventListener('mousemove', e=>{ if(!drawing) return; ctx.lineWidth=currentBrush; ctx.strokeStyle=currentColor; ctx.lineCap='round'; ctx.lineTo(getX(e), getY(e)); ctx.stroke(); });
+    canvas.addEventListener('mouseup', ()=>{ drawing=false; ctx.closePath(); });
+    canvas.addEventListener('mouseleave', ()=>{ drawing=false; ctx.closePath(); });
+    // touch
+    canvas.addEventListener('touchstart', e=>{ e.preventDefault(); drawing=true; const t=e.touches[0]; ctx.beginPath(); ctx.moveTo(t.clientX-canvas.getBoundingClientRect().left, t.clientY-canvas.getBoundingClientRect().top); saveHistory(); });
+    canvas.addEventListener('touchmove', e=>{ e.preventDefault(); if(!drawing) return; const t=e.touches[0]; ctx.lineWidth=currentBrush; ctx.strokeStyle=currentColor; ctx.lineCap='round'; ctx.lineTo(t.clientX-canvas.getBoundingClientRect().left, t.clientY-canvas.getBoundingClientRect().top); ctx.stroke(); });
+    canvas.addEventListener('touchend', ()=>{ drawing=false; ctx.closePath(); });
 
-// Drawing & tools
-canvas.addEventListener("mousedown", startDraw);
-canvas.addEventListener("mousemove", draw);
-canvas.addEventListener("mouseup", endDraw);
-canvas.addEventListener("touchstart", startDraw);
-canvas.addEventListener("touchmove", draw);
-canvas.addEventListener("touchend", endDraw);
+    function getX(e){ return e.touches ? e.touches[0].clientX - canvas.getBoundingClientRect().left : e.offsetX; }
+    function getY(e){ return e.touches ? e.touches[0].clientY - canvas.getBoundingClientRect().top : e.offsetY; }
 
-function startDraw(e) {
-  e.preventDefault();
-  drawing = true;
-  ctx.beginPath();
-  ctx.moveTo(getX(e), getY(e));
-  historyStack.push(ctx.getImageData(0, 0, canvas.width, canvas.height));
-}
-function draw(e) {
-  if (!drawing) return;
-  e.preventDefault();
-  ctx.lineWidth = currentBrush;
-  ctx.strokeStyle = currentColor;
-  ctx.lineCap = "round";
-  ctx.lineTo(getX(e), getY(e));
-  ctx.stroke();
-}
-function endDraw() {
-  drawing = false;
-  ctx.closePath();
-}
-function getX(e) {
-  return e.touches
-    ? e.touches[0].clientX - canvas.getBoundingClientRect().left
-    : e.offsetX;
-}
-function getY(e) {
-  return e.touches
-    ? e.touches[0].clientY - canvas.getBoundingClientRect().top
-    : e.offsetY;
-}
-colorPicker.addEventListener("input", (e) => (currentColor = e.target.value));
-brushSize.addEventListener("input", (e) => (currentBrush = e.target.value));
-undoBtn.addEventListener("click", () => {
-  if (historyStack.length > 0) {
-    ctx.putImageData(historyStack.pop(), 0, 0);
-    log("Undo last stroke.");
-  }
-});
-clearBtn.addEventListener("click", () => {
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  historyStack = [];
-  log("Canvas cleared.");
-});
-saveBtn.addEventListener("click", () => {
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({
-    orientation: "portrait",
-    unit: "px",
-    format: [canvas.width, canvas.height],
-  });
-  const imgData = canvas.toDataURL("image/png");
-  pdf.addImage(imgData, "PNG", 0, 0, canvas.width, canvas.height);
-  pdf.save("coloring_page.pdf");
-  log("Saved canvas as PDF.");
-});
-</script>
+    colorPicker.addEventListener('input', e=> currentColor = e.target.value);
+    brushSize.addEventListener('input', e=> currentBrush = e.target.value);
+
+    undoBtn.addEventListener('click', ()=>{
+      if(history.length===0) return; const imgData = history.pop(); ctx.putImageData(imgData,0,0); if(history.length===0) undoBtn.disabled=true; log('Undo applied');
+    });
+    clearBtn.addEventListener('click', ()=>{ ctx.clearRect(0,0,canvas.width,canvas.height); history=[]; undoBtn.disabled=true; log('Canvas cleared'); });
+
+    // Download PNG
+    downloadPNG.addEventListener('click', ()=>{
+      const link = document.createElement('a'); link.download='coloring_page.png'; link.href=canvas.toDataURL('image/png'); link.click(); log('PNG downloaded');
+    });
+
+    // Download PDF via jsPDF
+    downloadPDF.addEventListener('click', ()=>{
+      const { jsPDF } = window.jspdf; const pdf = new jsPDF({unit:'px',format:[canvas.width,canvas.height]}); const imgData = canvas.toDataURL('image/png'); pdf.addImage(imgData,'PNG',0,0,canvas.width,canvas.height); pdf.save('coloring_page.pdf'); log('PDF saved');
+    });
+
+    // Wait for OpenCV.js to be ready
+    function onOpenCvReady(){ log('OpenCV.js loaded'); }
+    if(cv && cv['onRuntimeInitialized']){ cv['onRuntimeInitialized']=onOpenCvReady; } else { console.warn('OpenCV runtime not found'); }
+  </script>
 </body>
 </html>
