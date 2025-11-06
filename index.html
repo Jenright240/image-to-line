@@ -188,7 +188,10 @@
           let eps = 0.002 * cv.arcLength(cnt, true);
           cv.approxPolyDP(cnt, approx, eps, true);
           // draw
-          cv.drawContours(result, new cv.MatVector(approx), -1, new cv.Scalar(0,0,0), 1, cv.LINE_AA);
+          let tmpVec = new cv.MatVector();
+          tmpVec.push_back(approx);
+          cv.drawContours(result, tmpVec, -1, new cv.Scalar(0, 0, 0), 1, cv.LINE_AA);
+          tmpVec.delete();
           approx.delete(); cnt.delete();
         }
 
