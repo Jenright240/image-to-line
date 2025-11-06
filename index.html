@@ -190,7 +190,7 @@ function setProgress(pct) {
 async function loadAIModel() {
   try {
     log("Loading TensorFlow.js HED edge refinement model...");
-    aiModel = await tf.loadGraphModel("./models/model.json");
+    aiModel = await tf.loadGraphModel('./models/model.json');
     log("AI model loaded successfully.");
     modelLoaded = true;
     if (imageLoaded) convertBtn.disabled = false;
