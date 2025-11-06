@@ -147,6 +147,7 @@
         let merged = new cv.Mat();
         cv.bitwise_or(adaptive, edges, merged);
         let kernel = cv.getStructuringElement(cv.MORPH_RECT, new cv.Size(3,3));
+        cv.bitwise_not(merged, merged);
         cv.morphologyEx(merged, merged, cv.MORPH_CLOSE, kernel);
         setProgress(70);
         let contours = new cv.MatVector();
@@ -154,6 +155,7 @@
         cv.findContours(merged, contours, hierarchy, cv.RETR_EXTERNAL, cv.CHAIN_APPROX_SIMPLE);
         setProgress(80);
         let result = new cv.Mat.zeros(merged.rows, merged.cols, cv.CV_8UC3);
+        result.setTo(new cv.Scalar(255, 255, 255));
         for (let i = 0; i < contours.size(); i++) {
           let cnt = contours.get(i);
           let area = cv.contourArea(cnt);
